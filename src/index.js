@@ -389,7 +389,6 @@ export default class Gantt {
 
     bind_events() {
         this.bind_grid_click();
-        this.bind_holiday_labels();
         this.bind_bar_events();
     }
 
@@ -703,18 +702,8 @@ export default class Gantt {
                             this.config.step) *
                         this.config.column_width;
                     const height = this.grid_height - this.config.header_height;
-                    const d_formatted = date_utils
-                        .format(d, 'YYYY-MM-DD', this.options.language)
-                        .replace(' ', '_');
-
-                    if (labels[d]) {
-                        let label = this.create_el({
-                            classes: 'holiday-label ' + 'label_' + d_formatted,
-                            append_to: this.$extras,
-                        });
-                        label.textContent = labels[d];
-                    }
-                    createSVG('rect', {
+                 
+                    const bar_holiday = createSVG('rect', {
                         x: Math.round(x),
                         y: this.config.header_height,
                         width:
@@ -724,13 +713,63 @@ export default class Gantt {
                                 'day',
                             ),
                         height,
-                        class: 'holiday-highlight ' + d_formatted,
+                        class: 'holiday-highlight',
                         style: `fill: ${color};`,
                         append_to: this.layers.grid,
+                        date: date_utils.format(d, 'YYYY-MM-DD', this.options.language),
                     });
+
+                    if (labels[d]) {
+                        this.setup_holiday_popup(labels[d], bar_holiday);
+                    }
                 }
             }
         }
+    }
+
+    setup_holiday_popup(label, bar_holiday) {
+        let timeout;
+
+        $.on(
+            this.$container,
+            'mouseover',
+            '.holiday-highlight',
+            (e) => {
+                timeout = setTimeout(() => {
+                    this.show_popup({
+                        x: e.clientX,
+                        y: e.clientY,
+                        type: 'holiday',
+                        // TODO: creating and passing a task object
+                        // from holidays since current popup implementation
+                        // depends entirely on tasks and now we have multiple
+                        // components like sidebar items or annotations.
+                        task: {
+                            name: label,
+                            _start: date_utils.parse(e.target.getAttribute('date')),
+                            _end: date_utils.add(
+                                date_utils.parse(e.target.getAttribute('date')),
+                                1,
+                                'day',
+                            ),
+                            actual_duration: 1,
+                            progress: 1,
+                        },
+                        target: bar_holiday,
+                    });
+                }, 200);
+            },
+        );
+
+        $.on(
+            this.$container,
+            'mouseout',
+            '.holiday-highlight',
+            () => {
+                clearTimeout(timeout);
+                this.popup?.hide?.();
+            },
+        );
     }
 
     /**
@@ -1137,36 +1176,12 @@ export default class Gantt {
         $.on(
             this.$container,
             'click',
-            '.grid-row, .grid-header, .ignored-bar, .holiday-highlight',
+            '.grid-row, .grid-header, .ignored-bar',
             () => {
                 this.unselect_all();
                 this.hide_popup();
             },
         );
-    }
-
-    bind_holiday_labels() {
-        const $highlights =
-            this.$container.querySelectorAll('.holiday-highlight');
-        for (let h of $highlights) {
-            const label = this.$container.querySelector(
-                '.label_' + h.classList[1],
-            );
-            if (!label) continue;
-            let timeout;
-            h.onmouseenter = (e) => {
-                timeout = setTimeout(() => {
-                    label.classList.add('show');
-                    label.style.left = (e.offsetX || e.layerX) + 'px';
-                    label.style.top = (e.offsetY || e.layerY) + 'px';
-                }, 300);
-            };
-
-            h.onmouseleave = (e) => {
-                clearTimeout(timeout);
-                label.classList.remove('show');
-            };
-        }
     }
 
     get_start_end_positions() {
